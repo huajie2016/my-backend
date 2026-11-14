@@ -16,7 +16,9 @@ jobs:
           java-version: 25
 
       - name: Build fat jar
-        run: ./gradlew buildFatJar --no-daemon
+        run: |
+          chmod +x ./gradlew
+          ./gradlew buildFatJar --no-daemon
 
       - name: Upload jar to server
         uses: appleboy/scp-action@v0.1.7
