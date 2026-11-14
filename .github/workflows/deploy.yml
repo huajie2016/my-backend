@@ -15,6 +15,9 @@ jobs:
           distribution: temurin
           java-version: 25
 
+      - name: Prefer mavenCentral in CI
+        run: sed -i '/maven.aliyun.com/d' settings.gradle.kts
+        
       - name: Build fat jar
         run: |
           chmod +x ./gradlew
