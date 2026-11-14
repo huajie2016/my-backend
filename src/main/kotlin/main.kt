@@ -127,7 +127,7 @@ fun main() {
                             else -> (Tokens.deleteWhere { Tokens.token eq t } > 0) to "已退出"
                         }
                     }
-                    println(">>> 退出登录: $msg")
+                    println(">>> 退出登录: $msg"+"V2")  //测试
                     call.respond(AuthResponse(success, msg))
                 }
             }
