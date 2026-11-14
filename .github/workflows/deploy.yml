@@ -37,6 +37,7 @@ jobs:
             mkdir -p /root/my-backend
             tar xzf /root/source.tar.gz -C /root/my-backend
             cd /root/my-backend
+            sed -i 's#services.gradle.org/distributions#mirrors.cloud.tencent.com/gradle#g' gradle/wrapper/gradle-wrapper.properties
             chmod +x ./gradlew
             ./gradlew buildFatJar --no-daemon
             cp build/libs/backend-all.jar /root/backend-all.jar
