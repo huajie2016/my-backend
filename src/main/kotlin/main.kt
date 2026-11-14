@@ -22,6 +22,9 @@ import io.ktor.http.content.PartData
 import java.io.File
 import io.ktor.utils.io.toByteArray
 
+data class PostRequest(val content: String)
+data class PostItem(val id: Int, val username: String, val content: String, val createdAt: Long)
+data class PostPage(val list: List<PostItem>, val total: Long)
 data class ChangePasswordRequest(val oldPassword: String, val newPassword: String)
 data class MeResponse(val username: String)
 
@@ -51,11 +54,18 @@ object Tokens : Table("tokens") {
     val expiresAt = long("expires_at")          // ← 新增：过期时间戳（毫秒）
     override val primaryKey = PrimaryKey(token)
 }
+object Posts : Table("posts") {
+    val id = integer("id").autoIncrement()
+    val username = varchar("username", 64)
+    val content = varchar("content", 500)
+    val createdAt = long("created_at")
+    override val primaryKey = PrimaryKey(id)
+}
 
 fun initDb() {
     Database.connect("jdbc:sqlite:users.db", driver = "org.sqlite.JDBC")
     transaction {
-        SchemaUtils.create(Users, Tokens)
+        SchemaUtils.create(Users, Tokens, Posts)
     }
 }
 
@@ -203,6 +213,8 @@ fun main() {
                 }
             }
 
+
+
             // ===== 静态文件服务：/avatars/xxx.jpg 直接访问 =====
             staticFiles( remotePath = "/avatars", dir = File("avatars"))
 
@@ -232,6 +244,56 @@ fun main() {
                         call.respond(io.ktor.http.HttpStatusCode.Unauthorized, AuthResponse(false, "令牌无效或已过期"))
                     }
                 }
+            }
+
+            // ===== 发帖（需要登录）=====
+            post( path = "/posts") {
+                val header = call.request.header("Authorization")
+                val now = System.currentTimeMillis()
+                val username = if (header == null) null else transaction {
+                    val r = Tokens.selectAll().where { Tokens.token eq header }.singleOrNull()
+                    if (r != null && r[Tokens.expiresAt] > now) r[Tokens.username] else null
+                }
+                if (username == null) {
+                    call.respond(io.ktor.http.HttpStatusCode.Unauthorized, AuthResponse(false, "未登录或令牌过期"))
+                } else {
+                    val body = Gson().fromJson(call.receiveText(), PostRequest::class.java)
+                    when {
+                        body.content.isBlank() -> call.respond(AuthResponse(false, "内容不能为空"))
+                        body.content.length > 500 -> call.respond(AuthResponse(false, "最多 500 字"))
+                        else -> {
+                            transaction {
+                                Posts.insert {
+                                    it[Posts.username] = username
+                                    it[content] = body.content
+                                    it[createdAt] = now
+                                }
+                            }
+                            call.respond(AuthResponse(true, "发布成功"))
+                        }
+                    }
+                }
+            }
+
+            // ===== 动态列表（公开，分页）=====
+            get( path = "/posts") {
+                val page = call.request.queryParameters["page"]?.toIntOrNull() ?: 0
+                val size = (call.request.queryParameters["size"]?.toIntOrNull() ?: 20).coerceIn(1, 50)
+                val list = transaction {
+                    Posts.selectAll()
+                        .orderBy(Posts.id, SortOrder.DESC)
+                        .limit(size).offset(page * size.toLong())
+                        .map {
+                            PostItem(
+                                id = it[Posts.id],
+                                username = it[Posts.username],
+                                content = it[Posts.content],
+                                createdAt = it[Posts.createdAt]
+                            )
+                        }
+                }
+                val total = transaction { Posts.selectAll().count() }
+                call.respond(PostPage(list, total))
             }
         }
     }.start(wait = true)
