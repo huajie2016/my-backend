@@ -26,5 +26,5 @@ jobs:
             ./gradlew buildFatJar --no-daemon
             cp build/libs/backend-all.jar /root/backend-all.jar
             systemctl restart myapp
-            sleep 3
+            sleep 5
             systemctl is-active myapp
