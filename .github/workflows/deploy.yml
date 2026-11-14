@@ -20,11 +20,11 @@ jobs:
           script: |
             set -e
             cd /root/my-backend
-            git fetch origin main
-            git reset --hard origin/main
+            git fetch origin main || git fetch origin main
+            git reset --hard FETCH_HEAD
             chmod +x ./gradlew
             ./gradlew buildFatJar --no-daemon
             cp build/libs/backend-all.jar /root/backend-all.jar
             systemctl restart myapp
-            sleep 5
+            sleep 3
             systemctl is-active myapp
