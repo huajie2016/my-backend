@@ -21,6 +21,11 @@ import io.ktor.server.request.receiveMultipart
 import io.ktor.http.content.PartData
 import java.io.File
 import io.ktor.utils.io.toByteArray
+import io.ktor.server.websocket.*
+import io.ktor.websocket.CloseReason
+import io.ktor.websocket.Frame
+import io.ktor.websocket.readText
+import io.ktor.websocket.close
 
 data class PostRequest(val content: String)
 data class PostItem(val id: Int, val username: String, val content: String, val createdAt: Long)
@@ -30,7 +35,12 @@ data class MeResponse(val username: String)
 
 data class AuthRequest(val username: String, val password: String)
 data class AuthResponse(val success: Boolean, val message: String, val token: String? = null)
+// 在线连接池：所有聊天室用户的 WebSocket 会话
+val chatConnections = java.util.Collections.synchronizedSet(
+    java.util.LinkedHashSet<io.ktor.websocket.WebSocketSession>()
+)
 
+data class ChatMessage(val username: String, val content: String, val time: Long)
 object ServerCrypto {
     private val random = SecureRandom()
     fun newSalt() = ByteArray(16).also { random.nextBytes(it) }.joinToString("") { "%02x".format(it) }
@@ -75,6 +85,7 @@ fun main() {
     initDb()
     embeddedServer(Netty, host = "127.0.0.1", port = 8081) {
         install(ContentNegotiation) { gson() }
+        install(WebSockets)
         routing {
             post("/register") {
                 val req = Gson().fromJson(call.receiveText(), AuthRequest::class.java)
@@ -272,6 +283,40 @@ fun main() {
                             call.respond(AuthResponse(true, "发布成功"))
                         }
                     }
+                }
+            }
+            // ===== 聊天室（WebSocket）=====
+            webSocket( path = "/ws/chat") {
+                // 用 query 参数传令牌（WebSocket 握手阶段不好带 Header）
+                val token = call.request.queryParameters["token"]
+                val now = System.currentTimeMillis()
+                val username = if (token == null) null else transaction {
+                    val r = Tokens.selectAll().where { Tokens.token eq token }.singleOrNull()
+                    if (r != null && r[Tokens.expiresAt] > now) r[Tokens.username] else null
+                }
+                if (username == null) {
+                    close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "未登录或令牌过期"))
+                    return@webSocket
+                }
+
+                chatConnections += this
+                println(">>> 聊天室: $username 上线（在线 ${chatConnections.size} 人）")
+                try {
+                    for (frame in incoming) {
+                        if (frame is Frame.Text) {
+                            val text = frame.readText().trim()
+                            if (text.isNotEmpty()) {
+                                val json = Gson().toJson(
+                                    ChatMessage(username, text, System.currentTimeMillis())
+                                )
+                                // 广播给所有在线用户（包括发送者自己）
+                                chatConnections.forEach { it.send(Frame.Text(json)) }
+                            }
+                        }
+                    }
+                } finally {
+                    chatConnections -= this
+                    println(">>> 聊天室: $username 离线（在线 ${chatConnections.size} 人）")
                 }
             }
 

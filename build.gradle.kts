@@ -28,6 +28,7 @@ dependencies {
     implementation("org.jetbrains.exposed:exposed-core:1.6.1")
     implementation("org.jetbrains.exposed:exposed-jdbc:1.6.1")
     implementation("org.xerial:sqlite-jdbc:3.46.1.3")
+    implementation("io.ktor:ktor-server-websockets:3.6.1")
 }
 // 控制台中文不乱码
 tasks.withType<JavaExec>().configureEach {
